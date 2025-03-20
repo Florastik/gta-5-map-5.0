@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Реальна карта з геолокацією в стилі GTA 5</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #map {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            filter: brightness(0.8);
+        }
+
+        #fog {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        #player {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: red;
+            border-radius: 50%;
+            z-index: 2000;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="map"></div>
+        <canvas id="fog"></canvas>
+        <div id="player"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Ініціалізація карти
+        const map = L.map('map', {
+            minZoom: 0,
+            maxZoom: 18,
+            zoomControl: false,
+            attributionControl: false
+        });
+
+        // Використання реальної карти OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '',
+            maxZoom: 18,
+            tileSize: 256
+        }).addTo(map);
+
+        const fog = document.getElementById('fog');
+        const player = document.getElementById('player');
+        const ctx = fog.getContext('2d');
+
+        // Налаштування розміру canvas
+        fog.width = window.innerWidth;
+        fog.height = window.innerHeight;
+
+        const revealRadius = 150;
+        let currentLat, currentLng;
+        let positions = []; // Масив для зберігання історії позицій
+
+        // Ініціалізація туману
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+        ctx.fillRect(0, 0, fog.width, fog.height);
+
+        function updatePlayerPosition(lat, lng) {
+            currentLat = lat;
+            currentLng = lng;
+            const point = map.latLngToContainerPoint([lat, lng]);
+            player.style.left = `${point.x - 10}px`;
+            player.style.top = `${point.y - 10}px`;
+        }
+
+        function revealMap(lat, lng) {
+            // Додаємо нову позицію до історії
+            positions.push({ lat, lng });
+
+            // Перемальовуємо весь туман
+            redrawFog();
+        }
+
+        function redrawFog() {
+            // Очищаємо canvas
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+            ctx.fillRect(0, 0, fog.width, fog.height);
+
+            // Перемальовуємо всі розкриті області
+            positions.forEach(pos => {
+                const point = map.latLngToContainerPoint([pos.lat, pos.lng]);
+                ctx.globalCompositeOperation = 'destination-out';
+                const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, revealRadius);
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, revealRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+            });
+        }
+
+        // Функція для отримання геолокації
+        function startGeolocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        map.setView([lat, lng], 15); // Центруємо карту на гравці
+                        updatePlayerPosition(lat, lng);
+                        revealMap(lat, lng); // Розкриваємо туман тільки при русі
+                    },
+                    (error) => {
+                        console.error("Помилка геолокації: ", error);
+                        alert("Не вдалося отримати геолокацію. Перевірте налаштування дозволів.");
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 0,
+                        timeout: 5000
+                    }
+                );
+            } else {
+                alert("Ваш браузер не підтримує геолокацію.");
+            }
+        }
+
+        // Оновлення позиції гравця і туману при русі карти
+        map.on('move', () => {
+            if (currentLat && currentLng) {
+                updatePlayerPosition(currentLat, currentLng);
+                redrawFog(); // Перемальовуємо туман, щоб він залишався прив’язаним до координат
+            }
+        });
+
+        // Оновлення розміру canvas і позиції гравця при зміні розміру вікна
+        window.addEventListener('resize', () => {
+            fog.width = window.innerWidth;
+            fog.height = window.innerHeight;
+            if (currentLat && currentLng) {
+                updatePlayerPosition(currentLat, currentLng);
+                redrawFog(); // Перемальовуємо туман
+            }
+        });
+
+        // Початок відстеження геолокації
+        startGeolocation();
+    </script>
+</body>
+</html>
